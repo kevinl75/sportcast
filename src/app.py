@@ -3,55 +3,64 @@ import streamlit as st
 from scipy.stats import poisson
 
 from utils import style_best_team_df_part, color_max
+from preprocess import prepare_initial_df, prepare_home_statistics, prepare_away_statistics
 
 st.title('Football Prediction')
 
 # From these data.
-df = pd.read_csv('https://www.football-data.co.uk/mmz4281/2324/F1.csv')
+df = prepare_initial_df()
+total_nb_matches = len(df)
+total_goals_score_home_team = df['FTHG'].sum()
+total_goals_score_away_team = df['FTAG'].sum()
+average_goals_score_home_team = total_goals_score_home_team / total_nb_matches
+average_goals_score_away_team = total_goals_score_away_team / total_nb_matches
 
-st.markdown("## Initial Data")
+st.markdown("### Initial Data")
+st.markdown("""This is the dataframe we use to realise our prediction.
+
+All the statistics computed and used on this page come from here.""")
 st.dataframe(df)
 
 team_names = df.HomeTeam.unique().tolist()
-nb_of_matches = len(df['HomeTeam'])
 
-nb_home_goal = df['FTHG'].sum() / nb_of_matches
-nb_away_goal = df['FTAG'].sum() / nb_of_matches
 
-st.write()
+team_home_statistics = prepare_home_statistics(df)
+team_away_statistics = prepare_away_statistics(df)
 
-# NB goals scored at home per team
-attack_force_home = df[["HomeTeam", "FTHG"]].groupby("HomeTeam").sum()
-attack_force_home["AHG"] = attack_force_home["FTHG"] / 19
-attack_force_home["AttackForceHome"] = attack_force_home["AHG"] / nb_home_goal
+st.markdown("# Attack and defense potential per team")
 
-# NB goals conceded away per team
-defense_force_away = df[["AwayTeam", "FTHG"]].groupby("AwayTeam").sum()
-defense_force_away["AHGC"] = defense_force_away["FTHG"] / 19
-defense_force_away["DefenseForceAway"] = defense_force_away["AHGC"] / nb_home_goal
+st.markdown("## At home")
+st.markdown("""### Caption to read this table
+- MPH: nb of matchs played at home
+- GSH: total goals scored at home
+- GCH: total goals conceded at home
+- AGSH: average number of goals scored at home
+- AGCH: average number of goals conceded at home
+- HAFS: home attack force score (the highest the better)
+- HDFS: home defense force score (the lowest the better)""")
+st.dataframe(team_home_statistics)
+st.markdown("Note that if a team has a HAFS score higher than its HDFS score, then the team is more comfortable at home.")
 
-# NB goals scored at home per team
-defense_force_home = df[["HomeTeam", "FTAG"]].groupby("HomeTeam").sum()
-defense_force_home["AAGC"] = defense_force_home["FTAG"] / 19
-defense_force_home["DefenseForceHome"] = defense_force_home["AAGC"] / nb_away_goal
+st.markdown("## Away")
+st.markdown("""### Caption to read this table
+- MPA: nb of matchs played away
+- GSA: total goals scored away
+- GCA: total goals conceded away
+- AGSA: average number of goals scored away
+- AGCA: average number of goals conceded away
+- AAFS: away attack force score (the highest the better)
+- ADFS: away defense force score (the lowest the better)""")
+st.dataframe(team_away_statistics)
+st.markdown("Note that if a team has a AAFS score higher than its ADFS score, then the team is more comfortable at home.")
 
-# NB goals scored at home per team
-attack_force_away = df[["AwayTeam", "FTAG"]].groupby("AwayTeam").sum()
-attack_force_away["AAG"] = attack_force_away["FTAG"] / 19
-attack_force_away["AttackForceAway"] = attack_force_away["AAG"] / nb_away_goal
-
-st.markdown("## Attack and defense Home Team statistics:")
-st.dataframe(attack_force_home.merge(defense_force_home, how="inner", on="HomeTeam"))
-st.markdown("## Attack and defense Away Team statistics:")
-st.dataframe(attack_force_away.merge(defense_force_away, how="inner", on="AwayTeam"))
 
 match_probability_dict = {}
 
 for home_team in team_names:
     for away_team in team_names:
         if away_team!= home_team:
-            prediction_goal_home_team = attack_force_home.loc[home_team, "AttackForceHome"] * defense_force_away.loc[away_team, "DefenseForceAway"] * nb_home_goal
-            prediction_goal_away_team = defense_force_home.loc[home_team, "DefenseForceHome"] * attack_force_away.loc[away_team, "AttackForceAway"] * nb_away_goal
+            prediction_goal_home_team = team_home_statistics.loc[home_team, "HAFS"] * team_away_statistics.loc[away_team, "ADFS"] * average_goals_score_home_team
+            prediction_goal_away_team = team_home_statistics.loc[home_team, "HDFS"] * team_away_statistics.loc[away_team, "AAFS"] * average_goals_score_away_team
             match_probability_dict[f"{home_team} vs {away_team}"] = [prediction_goal_home_team, prediction_goal_away_team]
 
 match_probability_df = pd.DataFrame.from_dict(match_probability_dict, orient='index')
